@@ -1,0 +1,54 @@
+[project]
+name = "finance-automation"
+version = "0.1.0"
+description = "Smart Invoice & Reconciliation Bot — AI + RPA 自動對帳系統"
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pdfplumber>=0.11.0",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.0",
+    "reportlab>=4.2.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+    "watchdog>=4.0.0",
+    "chromadb>=0.5.0",
+    # API server（前後端分離用）
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "python-multipart>=0.0.9",   # FastAPI 接收上傳檔案需要
+]
+
+[project.optional-dependencies]
+# 切換到 AWS S3 時啟用：uv sync --extra s3
+s3 = ["boto3>=1.34.0"]
+
+# ── Build system ──────────────────────────────────────────────────────────────
+# [build-system] 告訴打包工具「用什麼來把這個專案打包成可安裝的套件」。
+#
+# 這個專案目前不需要發布到 PyPI，但 uv / pip 在解析 pyproject.toml 時
+# 仍會讀取這個區塊來決定如何處理 editable install（pip install -e .）。
+#
+# hatchling 是目前最輕量的現代 build backend，適合不需要複雜打包邏輯的專案。
+# 其他選項：
+#   setuptools — 最老牌，功能最多，但設定較繁瑣
+#   flit       — 極簡，只適合純 Python 函式庫
+#   poetry     — 自帶依賴管理，但與 uv 功能重疊，不建議混用
+#
+# [dependency-groups] 是給開發工具用的（不會被 pip install 帶走）
+# 安裝指令：uv sync --group docs
+[dependency-groups]
+docs = [
+    "mkdocs-material>=9.5.0",        # Material Design 主題，最主流
+    "mkdocstrings[python]>=0.25.0",  # 從 docstring 自動產生 API 文件
+    "mkdocs-static-i18n>=1.2.3",     # 內容 i18n（.md = EN, .zh.md = 繁中）
+]
+
+# 這是一個 scripts 應用程式，不是要發布到 PyPI 的 library
+# package = false 告訴 uv：只安裝 dependencies，不要嘗試把這個專案打包安裝
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

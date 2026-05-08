@@ -1,0 +1,4 @@
+invoice_number,vendor_name,invoice_date,description,quantity,unit_price
+INV-2024-006,Chen & Partners Law Firm,2024-01-25,Corporate Legal Consultation (5 hrs),5,350.00
+INV-2024-006,Chen & Partners Law Firm,2024-01-25,Contract Review & Drafting,1,800.00
+INV-2024-006,Chen & Partners Law Firm,2024-01-25,Document Filing Fees,1,120.00

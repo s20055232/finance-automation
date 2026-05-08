@@ -1,0 +1,114 @@
+# docker-compose.yml — 認證基礎設施（Ory Zero Trust）
+#
+# 這個檔案只跑「認證層」的服務，應用程式（FastAPI + Vue）在本機跑。
+#
+# 架構圖：
+#
+#   使用者瀏覽器
+#       │
+#       ▼ http://127.0.0.1:4455
+#   ┌─────────────────────────────┐
+#   │  Oathkeeper（反向代理）      │  ← 攔截所有 request，驗證 session
+#   │  port 4455（public proxy）  │
+#   └──────────┬──────────────────┘
+#              │ 驗證 session
+#              ▼ http://kratos:4433/sessions/whoami
+#   ┌─────────────────────────────┐
+#   │  Kratos（身份管理）          │  ← 負責登入、註冊、登出流程
+#   │  port 4433（public API）    │
+#   │  port 4434（admin API）     │
+#   └──────────┬──────────────────┘
+#              │ 寄驗證信
+#              ▼ smtp://mailpit:1025
+#   ┌─────────────────────────────┐
+#   │  Mailpit（測試 email）       │  ← 攔截所有寄出的 email（arm64 + amd64）
+#   │  port 8025（Web UI）        │
+#   └─────────────────────────────┘
+#
+#   已驗證的 request 由 Oathkeeper 轉發到 →
+#   FastAPI（本機 port 8000）或 Vite（本機 port 5173）
+#
+# 啟動指令：
+#   make auth          → 背景啟動所有認證服務
+#   make auth-down     → 停止並移除容器
+#   make auth-logs     → 即時查看 log
+#
+# Secret 設定（複製 .env.example → .env，填入真實值）：
+#   KRATOS_SECRET_COOKIE  Kratos session cookie 加密 key（32 字元）
+#   KRATOS_SECRET_CIPHER  Kratos 資料加密 key（32 字元）
+
+services:
+
+  # ── Kratos：資料庫初始化（每次啟動前執行 migration）────────────────────────
+  kratos-migrate:
+    image: oryd/kratos:v1.2.0
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/db.sqlite?_fk=true&mode=rwc
+      - SECRETS_COOKIE=${KRATOS_SECRET_COOKIE}
+      - SECRETS_CIPHER=${KRATOS_SECRET_CIPHER}
+    volumes:
+      - kratos-sqlite:/var/lib/sqlite
+      - ./ory/kratos:/etc/config/kratos
+    command: -c /etc/config/kratos/kratos.yml migrate sql -e --yes
+    restart: on-failure
+    networks:
+      - ory
+
+  # ── Kratos：身份管理主服務 ───────────────────────────────────────────────────
+  kratos:
+    image: oryd/kratos:v1.2.0
+    depends_on:
+      kratos-migrate:
+        condition: service_completed_successfully
+    ports:
+      - "4433:4433"   # public API（供 Oathkeeper 和前端呼叫）
+      - "4434:4434"   # admin API（僅內部使用）
+    volumes:
+      - kratos-sqlite:/var/lib/sqlite
+      - ./ory/kratos:/etc/config/kratos
+    command: serve -c /etc/config/kratos/kratos.yml --dev --watch-courier
+    environment:
+      - DSN=sqlite:///var/lib/sqlite/db.sqlite?_fk=true&mode=rwc
+      - LOG_LEVEL=info
+      - SECRETS_COOKIE=${KRATOS_SECRET_COOKIE}
+      - SECRETS_CIPHER=${KRATOS_SECRET_CIPHER}
+    restart: unless-stopped
+    networks:
+      - ory
+
+  # ── Oathkeeper：Zero Trust 反向代理 ─────────────────────────────────────────
+  oathkeeper:
+    image: oryd/oathkeeper:v0.40.6
+    depends_on:
+      - kratos
+    ports:
+      - "4455:4455"   # public proxy（所有流量入口）
+      - "4456:4456"   # admin API
+    volumes:
+      - ./ory/oathkeeper:/etc/config/oathkeeper
+    command: serve proxy -c /etc/config/oathkeeper/oathkeeper.yml
+    restart: unless-stopped
+    networks:
+      - ory
+    # Mac / Windows 可用 host.docker.internal 連到本機
+    # Linux 需要加這行：
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Mailpit：測試用 SMTP server ──────────────────────────────────────────────
+  # Multi-platform：linux/amd64（fly.io）+ linux/arm64（Apple Silicon）
+  # 取代 oryd/mailslurper（僅 amd64，無法在 M 系列 Mac 原生執行）
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"   # SMTP（Kratos 寄信到這裡）
+      - "8025:8025"   # Web UI → http://127.0.0.1:8025
+    networks:
+      - ory
+
+volumes:
+  kratos-sqlite:        # Kratos 使用 SQLite，資料持久化在這個 volume
+
+networks:
+  ory:
+    driver: bridge

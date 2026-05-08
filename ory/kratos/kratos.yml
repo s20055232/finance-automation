@@ -1,0 +1,123 @@
+# ory/kratos/kratos.yml — Kratos 身份管理設定
+#
+# Kratos 負責：登入、註冊、登出、密碼重設、Email 驗證
+# 它「只管身份」，不管你的應用程式邏輯（那是 FastAPI 的事）
+#
+# 重要概念：Self-Service Flows
+#   Kratos 把每個動作（登入、註冊...）叫做一個「flow」
+#   Flow 的 UI 由你自己的前端（Vue）來渲染，Kratos 只提供 API
+#   Flow 流程：
+#     1. 使用者點「登入」→ 你的 Vue 向 Kratos 發起 flow
+#     2. Kratos 回傳 form fields（要填什麼欄位）
+#     3. Vue 渲染表單，使用者填寫送出
+#     4. Kratos 驗證，成功後設定 session cookie
+
+version: v1.2.0
+
+# 資料庫（SQLite，適合 demo；生產環境換成 PostgreSQL）
+dsn: sqlite:///var/lib/sqlite/db.sqlite?_fk=true&mode=rwc
+
+serve:
+  public:
+    base_url: http://127.0.0.1:4433/
+    host: 0.0.0.0   # 讓宿主機可以透過 localhost:4433 連進來
+    port: 4433
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://127.0.0.1:4455   # Oathkeeper proxy
+        - http://127.0.0.1:5173   # Vite dev server
+      allowed_methods: [POST, GET, PUT, PATCH, DELETE]
+      allowed_headers: [Authorization, Cookie, Content-Type]
+      exposed_headers: [Content-Type, Set-Cookie]
+  admin:
+    base_url: http://kratos:4434/
+
+# Self-Service 流程設定
+selfservice:
+  # 登入/註冊成功後的預設跳轉頁（Oathkeeper proxy 入口）
+  default_browser_return_url: http://127.0.0.1:4455/
+  allowed_return_urls:
+    - http://127.0.0.1:4455
+    - http://127.0.0.1:5173
+
+  methods:
+    password:
+      enabled: true   # 啟用帳號密碼登入
+
+  flows:
+    # 登入 flow
+    login:
+      lifespan: 10m
+      ui_url: http://127.0.0.1:4455/login    # Vue 的登入頁面
+
+    # 註冊 flow
+    registration:
+      lifespan: 10m
+      ui_url: http://127.0.0.1:4455/register
+      after:
+        password:
+          hooks:
+            - hook: session  # 註冊成功後自動登入（建立 session）
+
+    # 登出 flow
+    logout:
+      after:
+        default_browser_return_url: http://127.0.0.1:4455/login
+
+    # 密碼重設 flow（需要 email）
+    recovery:
+      enabled: true
+      ui_url: http://127.0.0.1:4455/recovery
+
+    # Email 驗證 flow
+    verification:
+      enabled: true
+      ui_url: http://127.0.0.1:4455/verification
+      after:
+        default_browser_return_url: http://127.0.0.1:4455/
+
+    # 個人資料設定 flow
+    settings:
+      ui_url: http://127.0.0.1:4455/settings
+
+    # 錯誤頁面
+    error:
+      ui_url: http://127.0.0.1:4455/error
+
+# 身份 Schema（使用 email + 密碼）
+identity:
+  default_schema_id: default
+  schemas:
+    - id: default
+      url: file:///etc/config/kratos/identity.schema.json
+
+# 密碼雜湊（bcrypt，cost 8 適合開發；生產環境建議 12）
+hashers:
+  algorithm: bcrypt
+  bcrypt:
+    cost: 8
+
+# 加密設定
+ciphers:
+  algorithm: xchacha20-poly1305
+
+# ⚠️  生產環境一定要換掉這兩個 secret！
+# YAML 放佔位符讓 IDE schema 驗證通過（需要 32 字元）
+# Runtime 時 docker-compose 設定的 SECRETS_COOKIE / SECRETS_CIPHER 環境變數
+# 會覆蓋這裡的值（Kratos env var 優先於設定檔）
+secrets:
+  cookie:
+    - DEV-SECRET-COOKIE-CHANGE-IN-PROD
+  cipher:
+    - DEV-SECRET-CIPHER-CHANGE-IN-PROD
+
+# Email 寄件（指向 MailSlurper，開發環境用）
+courier:
+  smtp:
+    connection_uri: smtp://mailpit:1025/?skip_ssl_verify=true
+
+log:
+  level: info
+  format: text
+  leak_sensitive_values: true   # 開發模式顯示敏感資訊，生產環境改 false

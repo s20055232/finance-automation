@@ -1,0 +1,85 @@
+site_name: Smart Invoice & Reconciliation Bot
+site_description: AI-powered invoice processing and auto-reconciliation system
+site_author: finance-automation
+docs_dir: docs
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix        # index.md = EN（預設）, index.zh.md = 繁中
+      fallback_to_default: true     # 沒有翻譯的頁面自動 fallback 到英文
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: zh
+          name: 繁體中文
+          build: true
+          nav_translations:
+            Home: 首頁
+            System Architecture: 系統架構
+            Overview: 總覽
+            Zero Trust Auth: Zero Trust 認證
+            RAG Query Engine: RAG 查詢引擎
+            Accounting Basics: 會計基礎
+            Double-Entry Bookkeeping: 複式記帳
+            Expense Categories: 費用分類
+            Developer Guide: 開發指南
+            Quick Start: 快速開始
+            Configuration: 設定說明
+            Object Storage: 物件儲存
+            Roadmap: 未來規劃
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - System Architecture:
+    - Overview: architecture/overview.md
+    - Zero Trust Auth: architecture/auth.md
+    - RAG Query Engine: architecture/rag.md
+  - Accounting Basics:
+    - Double-Entry Bookkeeping: accounting/double-entry.md
+    - Expense Categories: accounting/categories.md
+  - Developer Guide:
+    - Quick Start: guide/quickstart.md
+    - Configuration: guide/config.md
+    - Object Storage: guide/storage.md
+  - Roadmap: roadmap.md

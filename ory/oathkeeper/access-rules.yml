@@ -1,0 +1,97 @@
+# ory/oathkeeper/access-rules.yml — 存取控制規則
+#
+# URL 格式：<{http,https}>://<**>/path
+#   <{http,https}>  匹配 http 或 https
+#   <**>            匹配任意 host（localhost、127.0.0.1 都接受）
+#   <**> 在路徑末尾  匹配任意子路徑
+#
+# 這樣寫的好處：不管用 localhost 還是 127.0.0.1，規則都能命中。
+
+# ── 公開路由（不需登入）──────────────────────────────────────────────────────
+
+- id: public:login
+  match:
+    url: "<{http,https}>://<**>/login<**>"
+    methods: [GET, POST]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+- id: public:register
+  match:
+    url: "<{http,https}>://<**>/register<**>"
+    methods: [GET, POST]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+- id: public:recovery
+  match:
+    url: "<{http,https}>://<**>/recovery<**>"
+    methods: [GET, POST]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+# Vite 開發時的靜態資源（JS bundle、CSS、HMR websocket）
+- id: public:assets
+  match:
+    url: "<{http,https}>://<**>/<{assets,@vite,@fs,node_modules,src}/**>"
+    methods: [GET]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+# ── 受保護路由（需要登入）────────────────────────────────────────────────────
+
+# FastAPI 的所有 API endpoints（/api/* 前綴）
+# Oathkeeper 驗證 session 後，把 X-User-ID / X-User-Email 注入 header
+- id: protected:api
+  match:
+    url: "<{http,https}>://<**>/api/<**>"
+    methods: [GET, POST, PUT, DELETE, PATCH]
+  upstream:
+    url: "http://host.docker.internal:8000"
+  authenticators:
+    - handler: cookie_session
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: header
+
+# 所有其他頁面（Vue 前端，需登入才能看）
+# 未登入 → errors.handler: redirect → 跳轉到 /login
+- id: protected:app
+  match:
+    url: "<{http,https}>://<**>/<**>"
+    methods: [GET]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: cookie_session
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+  errors:
+    - handler: redirect

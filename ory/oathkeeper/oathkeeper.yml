@@ -1,0 +1,98 @@
+# ory/oathkeeper/oathkeeper.yml — Oathkeeper 反向代理設定
+#
+# Oathkeeper 是整個系統的「門衛」，所有流量都從這裡進來。
+# 它的工作流程：
+#
+#   1. 收到 request
+#   2. 對照 access-rules.yml，找到符合的規則
+#   3. 用規則指定的 authenticator 驗證身份
+#      → cookie_session: 去 Kratos 問「這個 cookie 是誰的？」
+#      → anonymous: 不驗證，直接放行（用於公開頁面）
+#   4. 用 authorizer 決定是否允許
+#   5. 用 mutator 在轉發前修改 request
+#      → header: 把使用者資訊注入 header（FastAPI 從這裡讀取）
+#   6. 轉發到 upstream（FastAPI 或 Vite）
+
+serve:
+  proxy:
+    port: 4455
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://127.0.0.1:5173   # Vite dev server
+      allowed_methods: [GET, POST, PUT, DELETE, PATCH]
+      allowed_headers: [Authorization, Content-Type, Cookie]
+  api:
+    port: 4456                    # Oathkeeper admin API（查看規則、debug 用）
+
+# 錯誤處理：
+#   瀏覽器訪問（Accept: text/html）→ 跳轉到登入頁
+#   API 呼叫（Accept: application/json）→ 回傳 JSON 錯誤
+errors:
+  fallback:
+    - json
+  handlers:
+    redirect:
+      enabled: true
+      config:
+        to: http://127.0.0.1:4455/login
+        when:
+          - error: [unauthorized, forbidden]
+            request:
+              header:
+                accept: ["text/html"]
+    json:
+      enabled: true
+      config:
+        verbose: true
+
+# Access Rules 的位置（詳細規則在 access-rules.yml）
+access_rules:
+  matching_strategy: glob
+  repositories:
+    - file:///etc/config/oathkeeper/access-rules.yml
+
+# ── Authenticators（驗證方式）────────────────────────────────────────────────
+
+authenticators:
+  # 不驗證，放行所有人（用於登入頁、靜態資源）
+  anonymous:
+    enabled: true
+    config:
+      subject: guest
+
+  # 用 Kratos session cookie 驗證
+  # 每個 request 進來，Oathkeeper 會打一次 /sessions/whoami 確認 session 是否有效
+  cookie_session:
+    enabled: true
+    config:
+      check_session_url: http://kratos:4433/sessions/whoami
+      preserve_path: true
+      subject_from: "identity.id"
+      extra_from: "@this"
+      only:
+        - ory_kratos_session    # 只認這個 cookie name
+
+# ── Authorizers（授權方式）───────────────────────────────────────────────────
+
+authorizers:
+  allow:
+    enabled: true   # 通過驗證就允許
+  deny:
+    enabled: true   # 永遠拒絕（可用來封鎖特定路由）
+
+# ── Mutators（轉發前修改 request）────────────────────────────────────────────
+
+mutators:
+  # 什麼都不改，原樣轉發（用於公開頁面）
+  noop:
+    enabled: true
+
+  # 把使用者資訊注入 HTTP header，FastAPI 從這裡讀取，不需要自己驗 token
+  # 這就是「Zero Trust」的精神：FastAPI 信任 Oathkeeper 傳來的 header
+  header:
+    enabled: true
+    config:
+      headers:
+        X-User-ID: "{{ print .Subject }}"
+        X-User-Email: "{{ print .Extra.identity.traits.email }}"
