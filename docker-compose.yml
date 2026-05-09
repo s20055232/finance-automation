@@ -106,9 +106,102 @@ services:
     networks:
       - ory
 
+  # ── Odoo 18：ERP（真實 Vendor Bills 資料來源）────────────────────────────────
+  #
+  # 使用方式：
+  #   make odoo           → 背景啟動 odoo + odoo-db
+  #   http://localhost:8069 → 首次開啟需建立資料庫（DB=odoo, admin passwd 見下）
+  #   make seed-odoo      → 植入 6 張示範 Vendor Bills
+  #   make odoo-down      → 停止 Odoo 服務
+  #
+  # Apple Silicon（ARM64）相容：odoo:18 官方 Image 提供 linux/arm64 build。
+  #
+  # odoo_connector.py 所需的環境變數（設在 backend/.env）：
+  #   ODOO_URL=http://localhost:8069
+  #   ODOO_DB=odoo
+  #   ODOO_USER=admin
+  #   ODOO_API_KEY=<在 Odoo Settings → Users → API Keys 產生>
+
+  odoo-db:
+    image: postgres:16
+    container_name: finance-odoo-db
+    environment:
+      # 不設定 POSTGRES_DB：讓 Odoo 透過 /web/database/manager 自行建立並初始化。
+      # 若預先建立空 DB，Odoo 啟動時會直接嘗試載入空 schema → KeyError: 'ir.http'。
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "odoo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - odoo
+
+  # ── FastAPI Backend ──────────────────────────────────────────────────────────
+  #
+  # 使用方式：
+  #   make backend        → 建置並背景啟動
+  #   make backend-down   → 停止
+  #   make backend-logs   → 即時 log
+  #
+  # 放在 ory network：Oathkeeper 可以直接用 http://backend:8000 轉發
+  # 放在 odoo network：可以呼叫 Odoo XML-RPC（http://odoo:8069）
+  #
+  # backend/.env 需設定：
+  #   ANTHROPIC_API_KEY, ODOO_API_KEY, ODOO_URL=http://odoo:8069
+  backend:
+    build:
+      context: ./backend
+    container_name: finance-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      - ODOO_URL=http://odoo:8069   # override .env: 容器內用 Docker hostname
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ory
+      - odoo
+    restart: unless-stopped
+
+  odoo:
+    image: odoo:18
+    container_name: finance-odoo
+    depends_on:
+      odoo-db:
+        condition: service_healthy
+    ports:
+      - "8069:8069"
+    environment:
+      - HOST=odoo-db
+      - PORT=5432
+      - USER=odoo
+      - PASSWORD=odoo
+    # `-i base,account`：首次啟動自動建立 DB 並安裝 base + 會計模組（account）。
+    # account 模組提供 account.move（Vendor Bills）和 Chart of Accounts，
+    # 是 seed_odoo.py 和 odoo_connector.py 的必要依賴。
+    # 首次啟動約需 5-8 分鐘；之後重啟 Odoo 會跳過已安裝的模組。
+    command: -- -d odoo -i base,account --without-demo=all
+    volumes:
+      - odoo-data:/var/lib/odoo
+    networks:
+      - odoo
+
 volumes:
   kratos-sqlite:        # Kratos 使用 SQLite，資料持久化在這個 volume
+  odoo-data:            # Odoo filestore（附件、PDF 等）
+  odoo-db-data:         # Odoo PostgreSQL 資料
 
 networks:
   ory:
+    driver: bridge
+  odoo:
     driver: bridge

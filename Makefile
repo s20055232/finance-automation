@@ -10,12 +10,14 @@
 # ── 完整指令請看各 .mk 檔案 ──────────────────────────────────────────────────
 #   make/python.mk    → install, samples, dev-backend, demo
 #   make/frontend.mk  → install-frontend, dev-frontend, build-frontend, dev
-#   make/auth.mk      → gen-secrets, auth, auth-down, auth-logs, mail
+#   make/auth.mk      → gen-secrets, auth, auth-down, auth-logs, mail, seed-user
+#   make/odoo.mk      → odoo, odoo-down, odoo-logs, odoo-reset, seed-odoo
 #   make/docs.mk      → docs-install, docs, docs-build
 #   make/clean.mk     → clean
 
 include make/python.mk
 include make/frontend.mk
 include make/auth.mk
+include make/odoo.mk
 include make/docs.mk
 include make/clean.mk

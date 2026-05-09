@@ -20,6 +20,15 @@ auth: gen-secrets
 auth-down:
 	docker compose down
 
+## 建立 demo 帳號（demo@example.com / demo1234）供本地開發登入
+seed-user:
+	@curl -sf -X POST http://127.0.0.1:4434/admin/identities \
+	  -H "Content-Type: application/json" \
+	  -d '{"schema_id":"default","traits":{"email":"demo@example.com"},"credentials":{"password":{"config":{"password":"demo1234"}}}}' \
+	  | python3 -m json.tool \
+	  && echo "\n✓ 帳號建立：demo@example.com / demo1234" \
+	  || echo "（帳號可能已存在，請直接登入）"
+
 ## 即時查看認證服務 log（Ctrl+C 離開）
 auth-logs:
 	docker compose logs -f kratos oathkeeper

@@ -50,6 +50,16 @@ AI_MODEL = os.getenv("AI_MODEL", "claude-sonnet-4-6")
 AI_MAX_TOKENS = 1024
 AI_TIMEOUT = 30.0
 
+# ── Ollama 本地 LLM（優先於 Claude，設定 OLLAMA_MODEL 後自動切換）────────────────
+# 先 pull model：ollama pull gemma4:1b
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+OLLAMA_MODEL    = os.getenv("OLLAMA_MODEL",    "")   # e.g. "gemma4:1b"
+
+# ── NVIDIA NIM 設定（OLLAMA_MODEL 未設定時才生效）────────────────────────────────
+NVIDIA_API_KEY  = os.getenv("NVIDIA_API_KEY", "")
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+NVIDIA_MODEL    = os.getenv("NVIDIA_MODEL",    "deepseek-ai/deepseek-v4-flash")
+
 # ── 對帳異常閾值 ──────────────────────────────────────────────────────────────
 # 單張發票超過這個金額 → 標記警告，提醒財務人員人工複核
 LARGE_AMOUNT_THRESHOLD = float(os.getenv("LARGE_AMOUNT_THRESHOLD", "10000"))

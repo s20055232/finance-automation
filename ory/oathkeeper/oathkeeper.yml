@@ -25,22 +25,12 @@ serve:
   api:
     port: 4456                    # Oathkeeper admin API（查看規則、debug 用）
 
-# 錯誤處理：
-#   瀏覽器訪問（Accept: text/html）→ 跳轉到登入頁
-#   API 呼叫（Accept: application/json）→ 回傳 JSON 錯誤
+# 錯誤處理：API 呼叫失敗時回傳 JSON（401/403）
+# 前端自己判斷 401 並導到 Kratos 登入頁（:4433）
 errors:
   fallback:
     - json
   handlers:
-    redirect:
-      enabled: true
-      config:
-        to: http://127.0.0.1:4455/login
-        when:
-          - error: [unauthorized, forbidden]
-            request:
-              header:
-                accept: ["text/html"]
     json:
       enabled: true
       config:
@@ -48,7 +38,7 @@ errors:
 
 # Access Rules 的位置（詳細規則在 access-rules.yml）
 access_rules:
-  matching_strategy: glob
+  matching_strategy: regexp
   repositories:
     - file:///etc/config/oathkeeper/access-rules.yml
 

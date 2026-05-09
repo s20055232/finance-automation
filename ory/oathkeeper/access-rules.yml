@@ -1,17 +1,23 @@
 # ory/oathkeeper/access-rules.yml — 存取控制規則
 #
-# URL 格式：<{http,https}>://<**>/path
-#   <{http,https}>  匹配 http 或 https
-#   <**>            匹配任意 host（localhost、127.0.0.1 都接受）
-#   <**> 在路徑末尾  匹配任意子路徑
+# matching_strategy: regexp（見 oathkeeper.yml）
 #
-# 這樣寫的好處：不管用 localhost 還是 127.0.0.1，規則都能命中。
+# Oathkeeper regexp 語法：
+#   < > 括號內是 regexp，括號外是字面字串。
+#   例：<https|http>://mydomain.com/<.*>
+#       ^^^^^^^^^^^^^^^^ regexp      ^^^^ regexp
+#                              ^^^^^^^^^^^^^^^ 字面字串
+#
+# 用 regexp 而非 glob 的原因：
+#   glob 的 <**> 會跨越斜線貪婪匹配，導致 /src/api/client.ts
+#   同時命中 public:assets（src/<**>）和 protected:api（<**>/api/<**>）→ 500。
+#   regexp 用 <[^/]+> 限制 host 不可跨越斜線，才能正確錨定路徑開頭。
 
 # ── 公開路由（不需登入）──────────────────────────────────────────────────────
 
 - id: public:login
   match:
-    url: "<{http,https}>://<**>/login<**>"
+    url: "<https|http>://<[^/]+>/login<.*>"
     methods: [GET, POST]
   upstream:
     url: "http://host.docker.internal:5173"
@@ -24,7 +30,7 @@
 
 - id: public:register
   match:
-    url: "<{http,https}>://<**>/register<**>"
+    url: "<https|http>://<[^/]+>/register<.*>"
     methods: [GET, POST]
   upstream:
     url: "http://host.docker.internal:5173"
@@ -37,7 +43,7 @@
 
 - id: public:recovery
   match:
-    url: "<{http,https}>://<**>/recovery<**>"
+    url: "<https|http>://<[^/]+>/recovery<.*>"
     methods: [GET, POST]
   upstream:
     url: "http://host.docker.internal:5173"
@@ -48,10 +54,11 @@
   mutators:
     - handler: noop
 
-# Vite 開發時的靜態資源（JS bundle、CSS、HMR websocket）
+# Vite 內部模組路徑（@vite、@fs、@id）與靜態資源（assets、src）
+# <[^/]+> 只匹配 host:port，不跨越斜線 → 不會和 /api/ 產生衝突
 - id: public:assets
   match:
-    url: "<{http,https}>://<**>/<{assets,@vite,@fs,node_modules,src}/**>"
+    url: "<https|http>://<[^/]+>/<assets|@vite|@fs|@id|node_modules|src>/<.*>"
     methods: [GET]
   upstream:
     url: "http://host.docker.internal:5173"
@@ -62,36 +69,93 @@
   mutators:
     - handler: noop
 
+# 前端 SPA 主要頁面（auth 由 Vue 透過 Kratos 驗證，Oathkeeper 只做路由）
+- id: public:app-root
+  match:
+    url: "<https|http>://<[^/]+>/"
+    methods: [GET]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+- id: public:app-pages
+  match:
+    url: "<https|http>://<[^/]+>/<dashboard|reports>"
+    methods: [GET]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+- id: public:favicon
+  match:
+    url: "<https|http>://<[^/]+>/favicon.ico"
+    methods: [GET]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+# ── Kratos self-service（瀏覽器直接呼叫 Kratos，必須同源）──────────────────
+#
+# 根本問題：瀏覽器在 127.0.0.1:4455，若直接呼叫 localhost:4433 就是跨 site。
+# SameSite=Lax cookie 不會在跨 site XHR 中送出 → Kratos 收不到 CSRF cookie → 403。
+#
+# 解法：把 /self-service/* 和 /sessions/whoami 也透過 Oathkeeper（4455）代理，
+# 讓所有 Kratos API 呼叫都是同源（127.0.0.1:4455），避免 SameSite 限制。
+
+- id: public:kratos-selfservice
+  match:
+    url: "<https|http>://<[^/]+>/self-service/<.*>"
+    methods: [GET, POST]
+  upstream:
+    url: "http://kratos:4433"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+- id: public:kratos-whoami
+  match:
+    url: "<https|http>://<[^/]+>/sessions/whoami"
+    methods: [GET]
+  upstream:
+    url: "http://kratos:4433"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
 # ── 受保護路由（需要登入）────────────────────────────────────────────────────
 
-# FastAPI 的所有 API endpoints（/api/* 前綴）
-# Oathkeeper 驗證 session 後，把 X-User-ID / X-User-Email 注入 header
+# FastAPI API endpoints — 驗證 session 並注入 X-User-ID / X-User-Email
+# /api/ 開頭，<[^/]+> 確保 host 不跨越斜線，不會匹配 /src/api/ 這類路徑
 - id: protected:api
   match:
-    url: "<{http,https}>://<**>/api/<**>"
+    url: "<https|http>://<[^/]+>/api/<.*>"
     methods: [GET, POST, PUT, DELETE, PATCH]
   upstream:
-    url: "http://host.docker.internal:8000"
+    url: "http://backend:8000"
   authenticators:
     - handler: cookie_session
   authorizer:
     handler: allow
   mutators:
     - handler: header
-
-# 所有其他頁面（Vue 前端，需登入才能看）
-# 未登入 → errors.handler: redirect → 跳轉到 /login
-- id: protected:app
-  match:
-    url: "<{http,https}>://<**>/<**>"
-    methods: [GET]
-  upstream:
-    url: "http://host.docker.internal:5173"
-  authenticators:
-    - handler: cookie_session
-  authorizer:
-    handler: allow
-  mutators:
-    - handler: noop
-  errors:
-    - handler: redirect

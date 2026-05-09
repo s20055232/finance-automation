@@ -23,9 +23,7 @@ RAG 方式：
     print(answer)
 """
 
-import json
 import os
-from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -175,7 +173,7 @@ class InvoiceRAGStore:
         if not hits:
             return "目前資料庫中沒有相關發票資料。請先執行 demo.py 建立索引。"
 
-        return _ask_claude(question, hits)
+        return _ask_llm(question, hits)
 
     def get_stats(self) -> dict:
         """回傳資料庫基本統計。"""
@@ -215,44 +213,66 @@ def _invoice_to_text(classified: "ClassifiedInvoice") -> str:
     )
 
 
-def _ask_claude(question: str, hits: list[dict]) -> str:
-    """
-    把搜尋結果交給 Claude 彙整成使用者友善的回答。
-
-    這是 RAG 的「Generation」階段：
-    - Retrieval（搜尋）已由 ChromaDB 完成
-    - Generation（生成）由 Claude 根據真實資料回答
-    """
-    import anthropic
-
-    context_blocks = []
-    for i, hit in enumerate(hits, 1):
-        meta = hit["metadata"]
-        context_blocks.append(
-            f"[發票 {i}] {hit['document']}"
-            f"（相關度：{1 - hit['distance']:.0%}）"
-        )
-
-    context_text = "\n".join(context_blocks)
-
+def _ask_llm(question: str, hits: list[dict]) -> str:
+    """把搜尋結果交給 LLM 彙整成回答（Ollama → NVIDIA → Claude）。"""
+    context_text = "\n".join(
+        f"[發票 {i}] {hit['document']}（相關度：{1 - hit['distance']:.0%}）"
+        for i, hit in enumerate(hits, 1)
+    )
     system_prompt = (
         "你是一位專業的財務助理。使用者會問你關於公司發票的問題。\n"
         "根據下方提供的發票資料，用繁體中文回答使用者的問題。\n"
         "回答要精確、簡潔，並引用具體的發票號碼和金額。\n"
         "如果資料不足以回答，請明確說明缺少哪些資訊。"
     )
+    user_message = f"以下是與問題相關的發票資料：\n\n{context_text}\n\n問題：{question}"
 
-    user_message = (
-        f"以下是與問題相關的發票資料：\n\n"
-        f"{context_text}\n\n"
-        f"問題：{question}"
-    )
+    ollama_model = os.getenv("OLLAMA_MODEL", "")
+    nvidia_key   = os.getenv("NVIDIA_API_KEY", "")
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model=os.getenv("AI_MODEL", "claude-sonnet-4-6"),
-        max_tokens=1024,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_message}],
-    )
-    return response.content[0].text
+    if ollama_model:
+        from openai import OpenAI
+        client = OpenAI(
+            base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1"),
+            api_key="ollama",
+        )
+        resp = client.chat.completions.create(
+            model=ollama_model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+            temperature=0.3,
+            max_tokens=1024,
+            stream=False,
+        )
+        return resp.choices[0].message.content or ""
+
+    elif nvidia_key:
+        from openai import OpenAI
+        client = OpenAI(
+            base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+            api_key=nvidia_key,
+        )
+        resp = client.chat.completions.create(
+            model=os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v4-flash"),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_message},
+            ],
+            temperature=0.3,
+            max_tokens=1024,
+            stream=False,
+        )
+        return resp.choices[0].message.content or ""
+
+    else:
+        import anthropic
+        ac = anthropic.Anthropic()
+        resp = ac.messages.create(
+            model=os.getenv("AI_MODEL", "claude-sonnet-4-6"),
+            max_tokens=1024,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        return resp.content[0].text

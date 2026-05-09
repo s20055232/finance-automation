@@ -17,7 +17,7 @@ build-frontend:
 ## 同時啟動 FastAPI + Vite（需安裝 concurrently）
 dev:
 	npx concurrently \
-	  "uv run uvicorn api:app --reload --port 8000" \
+	  "uv --directory backend run uvicorn api:app --reload --port 8000" \
 	  "cd frontend && npm run dev" \
 	  --names "backend,frontend" \
 	  --prefix-colors "cyan,magenta"
