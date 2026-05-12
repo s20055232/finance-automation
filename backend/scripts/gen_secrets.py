@@ -6,7 +6,7 @@ gen_secrets.py — 自動產生 Kratos secret 並寫入 .env
 import secrets
 from pathlib import Path
 
-ENV_FILE = Path(__file__).parent.parent / ".env"
+ENV_FILE = Path(__file__).parent.parent.parent / ".env"  # project root（docker-compose 讀這裡）
 
 REQUIRED = [
     "KRATOS_SECRET_COOKIE",

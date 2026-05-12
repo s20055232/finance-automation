@@ -113,6 +113,7 @@ class AnomalyFlag:
     vendor_name: str
     description: str        # 人類可讀的說明
     amount: Optional[float]
+    source_file: str = ""   # 對應 InvoiceData.source_file，唯一識別 invoice 實例
 
 
 @dataclass

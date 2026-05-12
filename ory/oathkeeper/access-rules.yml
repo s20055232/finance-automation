@@ -41,6 +41,19 @@
   mutators:
     - handler: noop
 
+- id: public:error
+  match:
+    url: "<https|http>://<[^/]+>/error<.*>"
+    methods: [GET]
+  upstream:
+    url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
 - id: public:recovery
   match:
     url: "<https|http>://<[^/]+>/recovery<.*>"
@@ -102,6 +115,24 @@
     methods: [GET]
   upstream:
     url: "http://host.docker.internal:5173"
+  authenticators:
+    - handler: anonymous
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+
+# ── Odoo（會計 ERP，自帶登入系統）─────────────────────────────────────────
+#
+# Oathkeeper 在 ory network，無法直接連 odoo container（odoo network）。
+# 改用 host.docker.internal:8069（Odoo 已 map 到 host port）。
+# --proxy-mode 讓 Odoo 讀取 X-Forwarded-Host，產生正確的 redirect URL。
+- id: public:odoo
+  match:
+    url: "<https|http>://<[^/]+>/<web|odoo|longpolling><.*>"
+    methods: [GET, POST, PUT, DELETE, PATCH, OPTIONS]
+  upstream:
+    url: "http://host.docker.internal:8069"
   authenticators:
     - handler: anonymous
   authorizer:

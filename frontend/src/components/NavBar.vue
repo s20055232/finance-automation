@@ -6,6 +6,7 @@ const props = defineProps<{ email?: string }>()
 const route = useRoute()
 
 const isActive = (path: string) => route.path.startsWith(path)
+const odooUrl = `${window.location.origin}/odoo/accounting`
 
 async function handleLogout() {
   await logout()
@@ -21,6 +22,12 @@ async function handleLogout() {
     <div class="navbar-links">
       <RouterLink to="/dashboard" :class="{ active: isActive('/dashboard') }">Dashboard</RouterLink>
       <RouterLink to="/reports" :class="{ active: isActive('/reports') }">Reports</RouterLink>
+      <a :href="odooUrl" target="_blank" rel="noopener" class="docs-link">
+        Odoo ↗
+      </a>
+      <a href="https://s20055232.github.io/finance-automation/" target="_blank" rel="noopener" class="docs-link">
+        Docs ↗
+      </a>
     </div>
     <div class="navbar-user">
       <span class="user-email">{{ props.email ?? 'Guest' }}</span>
@@ -67,6 +74,7 @@ async function handleLogout() {
   background: #334155;
   color: #f1f5f9;
 }
+.docs-link { color: #64748b !important; letter-spacing: 0.01em; }
 .navbar-user {
   display: flex;
   align-items: center;

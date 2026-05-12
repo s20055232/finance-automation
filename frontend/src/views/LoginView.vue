@@ -13,7 +13,7 @@ const formError = ref<string | null>(null)
 onMounted(async () => {
   const flowId = route.query.flow as string | undefined
   if (!flowId) {
-    window.location.href = 'http://127.0.0.1:4455/self-service/login/browser'
+    window.location.href = `${window.location.origin}/self-service/login/browser`
     return
   }
   try {
@@ -30,7 +30,7 @@ onMounted(async () => {
   } catch {
     formError.value = 'Session expired — restarting…'
     setTimeout(() => {
-      window.location.href = 'http://127.0.0.1:4455/self-service/login/browser'
+      window.location.href = `${window.location.origin}/self-service/login/browser`
     }, 1200)
   } finally {
     loading.value = false
@@ -45,6 +45,21 @@ onMounted(async () => {
         <span class="brand-icon">📊</span>
         <h1 class="brand-name">Finance Bot</h1>
         <p class="brand-sub">AI-powered invoice reconciliation</p>
+      </div>
+
+      <div class="login-desc">
+        <p class="desc-intro">
+          Month-end reconciliation is slow, error-prone, and hard to audit.
+          Finance Bot automates the entire pipeline:
+        </p>
+        <ul class="feature-list">
+          <li>Sync invoices from Odoo or upload PDF / CSV files</li>
+          <li>AI classifies each expense into the correct account</li>
+          <li>Generates double-entry journal entries automatically</li>
+          <li>Detects duplicates, large amounts, and future-dated invoices</li>
+          <li>Ask questions in plain English — "How much did we spend on marketing?"</li>
+          <li>Export a ready-to-use Excel reconciliation report</li>
+        </ul>
       </div>
 
       <div v-if="loading" class="status-msg">Loading…</div>
@@ -139,4 +154,40 @@ onMounted(async () => {
   margin-top: 0.25rem;
 }
 .btn-submit:hover { background: #2563eb; }
+.login-desc {
+  padding: 0.75rem 0.5rem;
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+}
+.desc-intro {
+  font-size: 0.8rem;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0 0 0.6rem;
+  text-align: center;
+}
+.feature-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.feature-list li {
+  font-size: 0.78rem;
+  color: #64748b;
+  padding-left: 1.1rem;
+  position: relative;
+  line-height: 1.4;
+}
+.feature-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #22c55e;
+  font-weight: 700;
+  font-size: 0.7rem;
+  top: 0.05rem;
+}
 </style>

@@ -1,6 +1,6 @@
 # make/python.mk — Python 後端相關指令
 
-.PHONY: install install-s3 samples dev-backend backend backend-down backend-logs demo demo-noai test
+.PHONY: install install-s3 samples dev-backend backend backend-down backend-logs test
 
 install:
 	uv --directory backend sync
@@ -27,14 +27,6 @@ backend-down:
 ## 即時查看 backend log
 backend-logs:
 	docker compose logs -f backend
-
-## 執行 CLI 完整流程（需 .env 設定 ANTHROPIC_API_KEY）
-demo:
-	uv --directory backend run python demo.py
-
-## 執行 CLI 流程，跳過 Claude API（不需 API key）
-demo-noai:
-	uv --directory backend run python demo.py --no-ai
 
 ## 執行單元測試
 test:

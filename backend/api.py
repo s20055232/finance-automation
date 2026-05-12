@@ -146,9 +146,11 @@ def _run_pipeline(invoices: list[InvoiceData]) -> tuple[list[ClassifiedInvoice],
 
 
 def _to_out(report: ReconciliationReport, cache_hits: int = 0, ai_calls: int = 0) -> ReconciliationOut:
+    # 用 source_file 當 key，確保相同 invoice_number 的不同 invoice 不會共用 anomalies
     anomaly_map: dict[str, list[AnomalyFlag]] = {}
     for a in report.anomalies:
-        anomaly_map.setdefault(a.invoice_number, []).append(a)
+        key = a.source_file if a.source_file else a.invoice_number
+        anomaly_map.setdefault(key, []).append(a)
 
     invoices_out = [
         InvoiceOut(
@@ -181,7 +183,7 @@ def _to_out(report: ReconciliationReport, cache_hits: int = 0, ai_calls: int = 0
                     description=a.description,
                     amount=a.amount,
                 )
-                for a in anomaly_map.get(ci.invoice.invoice_number, [])
+                for a in anomaly_map.get(ci.invoice.source_file, [])
             ],
         )
         for ci in report.processed_invoices

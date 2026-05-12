@@ -82,8 +82,8 @@ const trialBalance = computed<TrialRow[]>(() => {
       <h3 class="section-title">Anomalies</h3>
       <div class="anomaly-list">
         <div
-          v-for="anomaly in props.result.invoices.flatMap(i => i.anomalies)"
-          :key="anomaly.invoice_number + anomaly.anomaly_type"
+          v-for="(anomaly, idx) in props.result.invoices.flatMap(i => i.anomalies)"
+          :key="anomaly.invoice_number + anomaly.anomaly_type + idx"
           class="anomaly-row"
           :class="severityClass(anomaly.severity)"
         >

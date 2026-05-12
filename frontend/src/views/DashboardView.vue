@@ -1,38 +1,23 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { api, type OdooStatus, type ReconciliationResult as ReconciliationData } from '../api/client'
+import { api } from '../api/client'
+import type { OdooStatus, ReconciliationResult as ReconciliationResultData } from '../api/client'
 import ReconciliationResult from '../components/ReconciliationResult.vue'
 
-const odooStatus = ref<OdooStatus | null>(null)
-const result = ref<ReconciliationData | null>(null)
-const loading = ref(false)
-const error = ref<string | null>(null)
-
-const question = ref('')
-const queryAnswer = ref<string | null>(null)
+const odooStatus   = ref<OdooStatus | null>(null)
+const result       = ref<ReconciliationResultData | null>(null)
+const loading      = ref(false)
+const error        = ref<string | null>(null)
+const question     = ref('')
+const queryAnswer  = ref<string | null>(null)
 const queryLoading = ref(false)
-const queryError = ref<string | null>(null)
-
-async function askQuestion() {
-  if (!question.value.trim()) return
-  queryLoading.value = true
-  queryAnswer.value = null
-  queryError.value = null
-  try {
-    const res = await api.queryInvoices(question.value.trim())
-    queryAnswer.value = res.answer
-  } catch (e) {
-    queryError.value = (e as Error).message
-  } finally {
-    queryLoading.value = false
-  }
-}
+const queryError   = ref<string | null>(null)
 
 onMounted(async () => {
   try {
     odooStatus.value = await api.odooStatus()
   } catch {
-    // Odoo status is optional; silently ignore if backend not ready
+    // Odoo status is optional
   }
 })
 
@@ -62,6 +47,21 @@ async function uploadFile(e: Event) {
   } finally {
     loading.value = false
     ;(e.target as HTMLInputElement).value = ''
+  }
+}
+
+async function askQuestion() {
+  if (!question.value.trim()) return
+  queryLoading.value = true
+  queryAnswer.value = null
+  queryError.value = null
+  try {
+    const res = await api.queryInvoices(question.value.trim())
+    queryAnswer.value = res.answer
+  } catch (e) {
+    queryError.value = (e as Error).message
+  } finally {
+    queryLoading.value = false
   }
 }
 </script>
@@ -131,7 +131,7 @@ async function uploadFile(e: Event) {
     <!-- Loading -->
     <div v-if="loading" class="loading-banner">
       <div class="spinner" />
-      Running pipeline — classifying with Claude AI, generating journal entries…
+      Running pipeline — classifying with AI, generating journal entries…
     </div>
 
     <!-- Results -->
@@ -158,7 +158,7 @@ async function uploadFile(e: Event) {
         <input
           v-model="question"
           class="query-input"
-          placeholder="e.g. 這個月廣告費共花了多少？"
+          placeholder="e.g. How much did we spend on marketing this month?"
           :disabled="queryLoading"
           @keydown.enter="askQuestion"
         />

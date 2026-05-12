@@ -28,6 +28,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+# OrbStack injects IPv6 CIDR entries (e.g. fd07:b51a:cc66:f0::/64) into no_proxy.
+# httpx (used by chromadb for model download) can't parse them as URL patterns and raises
+# InvalidURL. Strip any entry containing ':' (IPv6) before chromadb is imported.
+for _k in ('no_proxy', 'NO_PROXY'):
+    _v = os.environ.get(_k, '')
+    if _v:
+        os.environ[_k] = ','.join(e for e in _v.split(',') if ':' not in e)
+
 import chromadb
 from chromadb.config import Settings
 
@@ -204,31 +212,31 @@ def _invoice_to_text(classified: "ClassifiedInvoice") -> str:
     ) or "（無明細）"
 
     return (
-        f"發票 {inv.invoice_number} 來自廠商 {inv.vendor_name}，"
-        f"日期 {inv.invoice_date}，"
-        f"總金額 {inv.currency} {inv.total_amount:,.2f}。"
-        f"費用類別：{classified.expense_category}。"
-        f"明細：{lines_text}。"
-        f"分類依據：{classified.ai_reasoning or '規則判斷'}。"
+        f"Invoice {inv.invoice_number} from vendor {inv.vendor_name}, "
+        f"dated {inv.invoice_date}, "
+        f"total {inv.currency} {inv.total_amount:,.2f}. "
+        f"Expense category: {classified.expense_category}. "
+        f"Line items: {lines_text}. "
+        f"Classification reasoning: {classified.ai_reasoning or 'keyword rules'}."
     )
 
 
 def _ask_llm(question: str, hits: list[dict]) -> str:
-    """把搜尋結果交給 LLM 彙整成回答（Ollama → NVIDIA → Claude）。"""
+    """把搜尋結果交給 LLM 彙整成回答（Ollama → Gemini）。"""
     context_text = "\n".join(
-        f"[發票 {i}] {hit['document']}（相關度：{1 - hit['distance']:.0%}）"
+        f"[Invoice {i}] {hit['document']} (relevance: {1 - hit['distance']:.0%})"
         for i, hit in enumerate(hits, 1)
     )
     system_prompt = (
-        "你是一位專業的財務助理。使用者會問你關於公司發票的問題。\n"
-        "根據下方提供的發票資料，用繁體中文回答使用者的問題。\n"
-        "回答要精確、簡潔，並引用具體的發票號碼和金額。\n"
-        "如果資料不足以回答，請明確說明缺少哪些資訊。"
+        "You are a professional financial assistant. "
+        "The user will ask questions about company invoices. "
+        "Answer based solely on the invoice data provided below. "
+        "Be precise and concise, citing specific invoice numbers and amounts. "
+        "If the data is insufficient to answer, clearly state what information is missing."
     )
-    user_message = f"以下是與問題相關的發票資料：\n\n{context_text}\n\n問題：{question}"
+    user_message = f"Relevant invoice data:\n\n{context_text}\n\nQuestion: {question}"
 
     ollama_model = os.getenv("OLLAMA_MODEL", "")
-    nvidia_key   = os.getenv("NVIDIA_API_KEY", "")
 
     if ollama_model:
         from openai import OpenAI
@@ -248,31 +256,17 @@ def _ask_llm(question: str, hits: list[dict]) -> str:
         )
         return resp.choices[0].message.content or ""
 
-    elif nvidia_key:
-        from openai import OpenAI
-        client = OpenAI(
-            base_url=os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"),
-            api_key=nvidia_key,
-        )
-        resp = client.chat.completions.create(
-            model=os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v4-flash"),
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_message},
-            ],
-            temperature=0.3,
-            max_tokens=1024,
-            stream=False,
-        )
-        return resp.choices[0].message.content or ""
-
     else:
-        import anthropic
-        ac = anthropic.Anthropic()
-        resp = ac.messages.create(
-            model=os.getenv("AI_MODEL", "claude-sonnet-4-6"),
-            max_tokens=1024,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY", ""))
+        resp = client.models.generate_content(
+            model=os.getenv("AI_MODEL", "gemini-2.5-flash"),
+            contents=user_message,
+            config=types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                max_output_tokens=1024,
+                temperature=0.3,
+            ),
         )
-        return resp.content[0].text
+        return resp.text or ""

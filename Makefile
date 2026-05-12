@@ -5,15 +5,17 @@
 #   2. make samples          → 產生測試發票
 #   3. make auth             → 啟動認證服務（需要 Docker）
 #   4. make dev              → 同時啟動 FastAPI + Vite
-#   5. 瀏覽器 → http://127.0.0.1:4455
+#   5. 瀏覽器 → https://allenlaiproject.com
 #
 # ── 完整指令請看各 .mk 檔案 ──────────────────────────────────────────────────
-#   make/python.mk    → install, samples, dev-backend, demo
+#   make/python.mk    → install, samples, dev-backend, test
 #   make/frontend.mk  → install-frontend, dev-frontend, build-frontend, dev
 #   make/auth.mk      → gen-secrets, auth, auth-down, auth-logs, mail, seed-user
 #   make/odoo.mk      → odoo, odoo-down, odoo-logs, odoo-reset, seed-odoo
 #   make/docs.mk      → docs-install, docs, docs-build
 #   make/clean.mk     → clean
+#   make/deploy.mk    → deploy
+#   make/tunnel.mk    → tunnel, tunnel-stop
 
 include make/python.mk
 include make/frontend.mk
@@ -21,3 +23,5 @@ include make/auth.mk
 include make/odoo.mk
 include make/docs.mk
 include make/clean.mk
+include make/deploy.mk
+include make/tunnel.mk

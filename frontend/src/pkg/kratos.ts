@@ -1,11 +1,11 @@
 import { Configuration, FrontendApi } from '@ory/client'
 
-// All Kratos calls go through Oathkeeper (127.0.0.1:4455) so they are
-// same-origin with the app. Direct calls to localhost:4433 are cross-site
-// (localhost ≠ 127.0.0.1), causing SameSite=Lax cookies to be blocked in XHR.
+// All Kratos calls go through Oathkeeper so they are same-origin with the app.
+// Using window.location.origin works for both local (http://127.0.0.1:4455)
+// and external access (Cloudflare Tunnel, production URL).
 const kratos = new FrontendApi(
   new Configuration({
-    basePath: 'http://127.0.0.1:4455',
+    basePath: window.location.origin,
     baseOptions: { withCredentials: true },
   }),
 )
@@ -30,7 +30,7 @@ export async function getSession(): Promise<KratosSession | null> {
 }
 
 export function loginUrl(): string {
-  return 'http://127.0.0.1:4455/self-service/login/browser'
+  return `${window.location.origin}/self-service/login/browser`
 }
 
 export async function logout(): Promise<void> {

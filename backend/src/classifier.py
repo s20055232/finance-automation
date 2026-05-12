@@ -1,47 +1,37 @@
 """
-classifier.py — Phase 2a：用 Claude API 將發票分類到費用科目
-
-=== Prompt Caching 說明 ===
-每次 API 呼叫都需要把「費用分類規則」帶進 system prompt。
-這份規則文字很長（約 2000+ tokens），但幾乎不會改變。
-
-做法：在 system prompt block 加上 cache_control: {type: "ephemeral"}
-第一次呼叫：Claude 讀取全部 tokens（慢，費用正常）
-後續呼叫：直接從 cache 讀取 system prompt（快，費用約 1/10）
-
-可從 response.usage.cache_read_input_tokens 確認是否有 cache hit。
+classifier.py — Phase 2a：用 Gemini API 將發票分類到費用科目
 
 === Fallback 機制 ===
-Claude API 不可用時（無網路、無 API key、rate limit），
+Gemini API 不可用時（無網路、無 API key、rate limit），
 自動切換到關鍵字規則分類（速度快，但準確度較低）。
 """
 
 import json
-import time
 import logging
 from typing import Optional
 
-import anthropic
+from google import genai
+from google.genai import types
 from openai import OpenAI
 
 from src.models import InvoiceData
 from config import (
-    AI_MODEL, AI_MAX_TOKENS, AI_TIMEOUT,
+    AI_MODEL, AI_MAX_TOKENS,
+    GEMINI_API_KEY,
     OLLAMA_BASE_URL, OLLAMA_MODEL,
-    NVIDIA_API_KEY, NVIDIA_BASE_URL, NVIDIA_MODEL,
     EXPENSE_CATEGORIES, CATEGORY_ACCOUNTS,
 )
 
 logger = logging.getLogger(__name__)
 
-# ── Claude API Client（單例）──────────────────────────────────────────────────
-_client: Optional[anthropic.Anthropic] = None
+# ── Gemini API Client（單例）──────────────────────────────────────────────────
+_gemini_client: Optional[genai.Client] = None
 
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic()
-    return _client
+def _get_gemini_client() -> genai.Client:
+    global _gemini_client
+    if _gemini_client is None:
+        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    return _gemini_client
 
 
 # ── Ollama Client（單例，無需 auth）──────────────────────────────────────────
@@ -54,22 +44,7 @@ def _get_ollama_client() -> OpenAI:
     return _ollama_client
 
 
-# ── NVIDIA NIM Client（單例）─────────────────────────────────────────────────
-_nvidia_client: Optional[OpenAI] = None
-
-def _get_nvidia_client() -> OpenAI:
-    global _nvidia_client
-    if _nvidia_client is None:
-        _nvidia_client = OpenAI(base_url=NVIDIA_BASE_URL, api_key=NVIDIA_API_KEY)
-    return _nvidia_client
-
-
-# ── System Prompt（費用分類規則，會被 cache）─────────────────────────────────────
-#
-# 這份 prompt 需要超過 2048 tokens 才能在 Sonnet 4.6 上觸發 cache。
-# 詳細的規則描述有助於：
-#   1. 讓 cache 效果最大化（prompt 越長，cache 節省越多）
-#   2. 提高分類準確度（規則越清楚，模型越少猜測）
+# ── System Prompt（費用分類規則）────────────────────────────────────────────────
 #
 CLASSIFICATION_SYSTEM_PROMPT = """You are an expert accountant specializing in expense classification for small to medium businesses. Your task is to analyze invoice data and classify expenses into the correct accounting categories.
 
@@ -241,7 +216,7 @@ def _keyword_match(text: str) -> str:
 def classify_invoice(invoice: InvoiceData) -> dict:
     """
     單張發票分類。
-    NVIDIA_API_KEY 設定時優先用 NVIDIA NIM，否則用 Claude API，
+    OLLAMA_MODEL 設定時優先用本地 Ollama，否則用 Gemini API，
     兩者都不可用時自動切換到關鍵字規則。
     """
     if OLLAMA_MODEL:
@@ -253,42 +228,19 @@ def classify_invoice(invoice: InvoiceData) -> dict:
             logger.warning("Ollama error for %s: %s", invoice.invoice_number, e)
         return fallback_classify(invoice)
 
-    if NVIDIA_API_KEY:
-        try:
-            result = _call_nvidia(invoice)
-            result["classification_source"] = "ai"
-            return result
-        except Exception as e:
-            logger.warning("NVIDIA API error for %s: %s", invoice.invoice_number, e)
-        return fallback_classify(invoice)
-
     try:
-        result = _call_claude(invoice)
+        result = _call_gemini(invoice)
         result["classification_source"] = "ai"
         return result
-    except anthropic.AuthenticationError:
-        raise   # API key 錯誤是致命錯誤，不應 fallback
-    except anthropic.RateLimitError as e:
-        retry_after = int(getattr(e.response, "headers", {}).get("retry-after", "10"))
-        logger.warning("Rate limited, retrying after %ds...", retry_after)
-        time.sleep(retry_after)
-        try:
-            result = _call_claude(invoice)
-            result["classification_source"] = "ai"
-            return result
-        except Exception:
-            pass
     except Exception as e:
-        logger.warning("Claude API error for %s: %s", invoice.invoice_number, e)
+        logger.warning("Gemini API error for %s: %s", invoice.invoice_number, e)
 
     return fallback_classify(invoice)
 
 
 def classify_batch(invoices: list[InvoiceData]) -> list[dict]:
-    """批次分類（NVIDIA NIM 優先，否則 Claude + prompt cache 統計）。"""
+    """批次分類（Ollama 優先，否則 Gemini API）。"""
     results = []
-    total_cache_reads = 0
-    total_cache_writes = 0
 
     for i, invoice in enumerate(invoices, 1):
         if OLLAMA_MODEL:
@@ -299,24 +251,12 @@ def classify_batch(invoices: list[InvoiceData]) -> list[dict]:
                 logger.warning("[%d/%d] %s — Ollama error, using fallback: %s",
                                i, len(invoices), invoice.invoice_number, e)
                 result = fallback_classify(invoice)
-        elif NVIDIA_API_KEY:
-            try:
-                result = _call_nvidia(invoice)
-                result["classification_source"] = "ai"
-            except Exception as e:
-                logger.warning("[%d/%d] %s — NVIDIA error, using fallback: %s",
-                               i, len(invoices), invoice.invoice_number, e)
-                result = fallback_classify(invoice)
         else:
             try:
-                result = _call_claude(invoice, track_usage=True)
+                result = _call_gemini(invoice)
                 result["classification_source"] = "ai"
-                total_cache_reads += result.pop("_cache_read_tokens", 0)
-                total_cache_writes += result.pop("_cache_write_tokens", 0)
-            except anthropic.AuthenticationError:
-                raise
             except Exception as e:
-                logger.warning("[%d/%d] %s — Claude error, using fallback: %s",
+                logger.warning("[%d/%d] %s — Gemini error, using fallback: %s",
                                i, len(invoices), invoice.invoice_number, e)
                 result = fallback_classify(invoice)
 
@@ -324,14 +264,6 @@ def classify_batch(invoices: list[InvoiceData]) -> list[dict]:
         logger.info("[%d/%d] %s → %s (%s)",
                     i, len(invoices), invoice.invoice_number,
                     result["expense_category"], result["classification_source"])
-
-    if total_cache_reads > 0 or total_cache_writes > 0:
-        logger.info(
-            "Prompt cache stats — writes: %d tokens, reads: %d tokens "
-            "(%.0f%% cost saving on cached portion)",
-            total_cache_writes, total_cache_reads,
-            (total_cache_reads / max(total_cache_reads + total_cache_writes, 1)) * 100,
-        )
 
     return results
 
@@ -430,40 +362,21 @@ def _call_ollama(invoice: InvoiceData) -> dict:
     return result
 
 
-def _call_nvidia(invoice: InvoiceData) -> dict:
-    """
-    呼叫 NVIDIA NIM API（OpenAI-compatible，streaming）。
-    收集 content chunks，略過 reasoning tokens，解析 JSON。
-    """
-    client = _get_nvidia_client()
+def _call_gemini(invoice: InvoiceData) -> dict:
+    """呼叫 Gemini API 並解析回傳的 JSON。"""
+    client = _get_gemini_client()
 
-    stream = client.chat.completions.create(
-        model=NVIDIA_MODEL,
-        messages=[
-            {"role": "system", "content": CLASSIFICATION_SYSTEM_PROMPT},
-            {"role": "user",   "content": _build_user_prompt(invoice)},
-        ],
-        temperature=1,
-        top_p=0.95,
-        max_tokens=16384,
-        extra_body={
-            "chat_template_kwargs": {
-                "thinking": True,
-                "reasoning_effort": "low",
-            }
-        },
-        stream=True,
+    response = client.models.generate_content(
+        model=AI_MODEL,
+        contents=_build_user_prompt(invoice),
+        config=types.GenerateContentConfig(
+            system_instruction=CLASSIFICATION_SYSTEM_PROMPT,
+            max_output_tokens=AI_MAX_TOKENS,
+            temperature=0.1,
+        ),
     )
 
-    content_parts: list[str] = []
-    for chunk in stream:
-        if not getattr(chunk, "choices", None):
-            continue
-        delta = chunk.choices[0].delta
-        if delta.content is not None:
-            content_parts.append(delta.content)
-
-    text = "".join(content_parts).strip()
+    text = (response.text or "").strip()
 
     # 移除可能的 markdown code fence
     if text.startswith("```"):
@@ -476,7 +389,7 @@ def _call_nvidia(invoice: InvoiceData) -> dict:
 
     category = result.get("expense_category", "other")
     if category not in EXPENSE_CATEGORIES:
-        logger.warning("NVIDIA returned unknown category '%s', defaulting to 'other'", category)
+        logger.warning("Gemini returned unknown category '%s', defaulting to 'other'", category)
         result["expense_category"] = "other"
 
     accounts = CATEGORY_ACCOUNTS.get(result["expense_category"], CATEGORY_ACCOUNTS["other"])
@@ -485,67 +398,5 @@ def _call_nvidia(invoice: InvoiceData) -> dict:
     result.setdefault("expense_subcategory",       "general")
     result.setdefault("classification_confidence", "medium")
     result.setdefault("ai_reasoning", "")
-
-    return result
-
-
-def _call_claude(invoice: InvoiceData, track_usage: bool = False) -> dict:
-    """
-    呼叫 Claude API（含 prompt caching）並解析回傳的 JSON。
-
-    System prompt 加上 cache_control，會在第一次呼叫後被 cache。
-    後續同一個 session 的呼叫會直接讀 cache，費用降低約 90%。
-    """
-    client = _get_client()
-
-    response = client.messages.create(
-        model=AI_MODEL,
-        max_tokens=AI_MAX_TOKENS,
-        system=[
-            {
-                "type": "text",
-                "text": CLASSIFICATION_SYSTEM_PROMPT,
-                "cache_control": {"type": "ephemeral"},   # ← cache 就靠這個
-            }
-        ],
-        messages=[
-            {"role": "user", "content": _build_user_prompt(invoice)}
-        ],
-        timeout=AI_TIMEOUT,
-    )
-
-    # 取出回傳的文字（第一個 text block）
-    text = next(
-        (block.text for block in response.content if block.type == "text"),
-        "",
-    ).strip()
-
-    # 移除可能的 markdown code fence
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-    text = text.strip()
-
-    result = json.loads(text)
-
-    # 驗證必要欄位
-    category = result.get("expense_category", "other")
-    if category not in EXPENSE_CATEGORIES:
-        logger.warning("Claude returned unknown category '%s', defaulting to 'other'", category)
-        result["expense_category"] = "other"
-
-    # 補齊缺少的帳戶欄位（用 CATEGORY_ACCOUNTS 作為預設值）
-    accounts = CATEGORY_ACCOUNTS.get(result["expense_category"], CATEGORY_ACCOUNTS["other"])
-    result.setdefault("suggested_debit_account", accounts["debit"])
-    result.setdefault("suggested_credit_account", accounts["credit"])
-    result.setdefault("expense_subcategory", "general")
-    result.setdefault("classification_confidence", "medium")
-    result.setdefault("ai_reasoning", "")
-
-    # cache 統計（供 classify_batch 使用）
-    if track_usage and hasattr(response, "usage"):
-        result["_cache_read_tokens"] = getattr(response.usage, "cache_read_input_tokens", 0) or 0
-        result["_cache_write_tokens"] = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
 
     return result

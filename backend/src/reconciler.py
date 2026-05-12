@@ -164,6 +164,7 @@ def _detect_unbalanced_entries(
                     f"debits ${total_dr:,.2f} ≠ credits ${total_cr:,.2f}"
                 ),
                 amount=abs(total_dr - total_cr),
+                source_file=ci.invoice.source_file,
             ))
     return flags
 
@@ -192,6 +193,7 @@ def _detect_exact_duplicates(
                     f"appears more than once."
                 ),
                 amount=ci.invoice.total_amount,
+                source_file=ci.invoice.source_file,
             ))
         else:
             seen[key] = ci
@@ -210,6 +212,7 @@ def _detect_near_duplicates(
     """
     flags = []
     invoices = [ci.invoice for ci in classified_invoices]
+    already_flagged: set[str] = set()
 
     for i, inv_a in enumerate(invoices):
         for inv_b in invoices[i + 1:]:
@@ -225,6 +228,9 @@ def _detect_near_duplicates(
             if abs((date_a - date_b).days) <= DUPLICATE_WINDOW_DAYS:
                 # 只對日期較晚的那張標記，避免兩張都被標記造成混淆
                 later = inv_a if date_a >= date_b else inv_b
+                if later.invoice_number in already_flagged:
+                    continue
+                already_flagged.add(later.invoice_number)
                 flags.append(AnomalyFlag(
                     severity="warning",
                     anomaly_type="near_duplicate",
@@ -236,6 +242,7 @@ def _detect_near_duplicates(
                         f"with amounts ${inv_a.total_amount:,.2f} and ${inv_b.total_amount:,.2f}."
                     ),
                     amount=later.total_amount,
+                    source_file=later.source_file,
                 ))
     return flags
 
@@ -257,6 +264,7 @@ def _detect_large_amounts(
                     f"threshold ${LARGE_AMOUNT_THRESHOLD:,.2f}. Manual review recommended."
                 ),
                 amount=ci.invoice.total_amount,
+                source_file=ci.invoice.source_file,
             ))
     return flags
 
@@ -283,6 +291,7 @@ def _detect_future_dates(
                     "Verify the date is correct."
                 ),
                 amount=ci.invoice.total_amount,
+                source_file=ci.invoice.source_file,
             ))
     return flags
 
@@ -308,6 +317,7 @@ def _detect_low_confidence(
                     "Review and reclassify if needed."
                 ),
                 amount=ci.invoice.total_amount,
+                source_file=ci.invoice.source_file,
             ))
     return flags
 
@@ -332,6 +342,7 @@ def _detect_missing_invoice_number(
                     "Request the Invoice Number from the Vendor."
                 ),
                 amount=ci.invoice.total_amount,
+                source_file=ci.invoice.source_file,
             ))
     return flags
 
@@ -359,6 +370,7 @@ def _detect_old_invoices(
                     "Confirm this is not a late submission past the Expense Period."
                 ),
                 amount=ci.invoice.total_amount,
+                source_file=ci.invoice.source_file,
             ))
     return flags
 

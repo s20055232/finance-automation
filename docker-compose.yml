@@ -72,6 +72,16 @@ services:
       - LOG_LEVEL=info
       - SECRETS_COOKIE=${KRATOS_SECRET_COOKIE}
       - SECRETS_CIPHER=${KRATOS_SECRET_CIPHER}
+      - SERVE_PUBLIC_BASE_URL=${PUBLIC_URL:-https://allenlaiproject.com}/
+      - SELFSERVICE_DEFAULT_BROWSER_RETURN_URL=${PUBLIC_URL:-https://allenlaiproject.com}/
+      - SELFSERVICE_FLOWS_LOGIN_UI_URL=${PUBLIC_URL:-https://allenlaiproject.com}/login
+      - SELFSERVICE_FLOWS_REGISTRATION_UI_URL=${PUBLIC_URL:-https://allenlaiproject.com}/register
+      - SELFSERVICE_FLOWS_LOGOUT_AFTER_DEFAULT_BROWSER_RETURN_URL=${PUBLIC_URL:-https://allenlaiproject.com}/login
+      - SELFSERVICE_FLOWS_RECOVERY_UI_URL=${PUBLIC_URL:-https://allenlaiproject.com}/recovery
+      - SELFSERVICE_FLOWS_VERIFICATION_UI_URL=${PUBLIC_URL:-https://allenlaiproject.com}/verification
+      - SELFSERVICE_FLOWS_VERIFICATION_AFTER_DEFAULT_BROWSER_RETURN_URL=${PUBLIC_URL:-https://allenlaiproject.com}/
+      - SELFSERVICE_FLOWS_SETTINGS_UI_URL=${PUBLIC_URL:-https://allenlaiproject.com}/settings
+      - SELFSERVICE_FLOWS_ERROR_UI_URL=${PUBLIC_URL:-https://allenlaiproject.com}/error
     restart: unless-stopped
     networks:
       - ory
@@ -189,7 +199,7 @@ services:
     # account 模組提供 account.move（Vendor Bills）和 Chart of Accounts，
     # 是 seed_odoo.py 和 odoo_connector.py 的必要依賴。
     # 首次啟動約需 5-8 分鐘；之後重啟 Odoo 會跳過已安裝的模組。
-    command: -- -d odoo -i base,account --without-demo=all
+    command: -- -d odoo -i base,account --without-demo=all --proxy-mode
     volumes:
       - odoo-data:/var/lib/odoo
     networks:
